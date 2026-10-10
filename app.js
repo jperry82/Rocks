@@ -45,8 +45,19 @@ $('sound').onclick=()=>{sound=!sound;if(sound)initAudio();$('sound').textContent
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,reduced?Math.min(ms,350):ms));
 function rock(name,kind='concealed'){const node=document.createElement('div');node.className=`rock ${kind}`;const img=document.createElement('img');img.src='assets/rock.png';img.alt='';const label=document.createElement('span');label.textContent=name;node.append(img,label);return node;}
 function stageTitle(phase,title){$('stage').replaceChildren();const p=document.createElement('p');p.className='phase';p.textContent=phase;const h=document.createElement('h2');h.textContent=title;$('stage').append(p,h);return h;}
-const paceFactors={quick:.5,standard:1,epic:1.5};
-const showWait=ms=>wait(ms*(paceFactors[$('pace').value]||1));
+// Build a per-draw timing budget so the selector controls the entire show.
+const durationTargets={quick:30000,standard:60000,epic:90000};
+let timelineScale=1;
+const showWait=ms=>wait(ms*timelineScale);
+function configureTimeline(count){
+  // Opening 4500 + players 4200 + casting 4200 + final two 5000 + reveal 3300 + outro 3000.
+  // Safe reveals: count-2; no unbudgeted delays.
+  const safeBase=Math.max(350,Math.min(2500,28000/Math.max(1,count-2)));
+  const baseline=24200+Math.max(0,count-2)*safeBase;
+  timelineScale=durationTargets[$('pace').value]/baseline;
+  return safeBase;
+}
+$('pace').addEventListener('change',()=>{if(!busy)$('message').textContent=`${$('pace').selectedOptions[0].textContent} selected for the next draw.`;});
 function cinematicSound(kind){
   if(!sound)return;
   if(kind==='rumble'){tone(58,1.8,.12,'sawtooth');tone(38,2,.08,'triangle');}
@@ -68,6 +79,7 @@ function renderHistory(){
 }
 async function playSequence(draw){
   const n=draw.length, survivors=draw.filter(p=>!p.purple), eliminated=draw.find(p=>p.purple);
+  const safeTime=configureTimeline(n);
   $('stage').classList.remove('finale');document.querySelector('.arena').classList.remove('dramatic');
   $('round-label').textContent='THE ROCKS HAVE BEEN CAST';
   scene('LEAVE IT TO FATE','The council has spoken.','One purple rock. No second chances.');
@@ -75,14 +87,16 @@ async function playSequence(draw){
   scene('THE PLAYERS',`${n} souls. One fate.`,draw.map(p=>p.name).join('  ·  '));
   await showWait(4200);
   scene('THE ROCKS ARE CAST','Fate is in motion.');
+  document.querySelector('.arena').classList.add('casting');
   const grid=document.createElement('div');grid.className='draw-grid';$('stage').append(grid);
   const nodes=draw.map((_,i)=>{const el=rock('?');el.classList.add('thrown');el.style.setProperty('--delay',`${Math.min(i*.045,.7)}s`);grid.append(el);return el;});
   cinematicSound('rumble');await showWait(4200);
+  document.querySelector('.arena').classList.remove('casting');
   $('stage').querySelector('h2').textContent='White means another day.';
   const caption=document.createElement('p');caption.className='safe-tag';$('stage').append(caption);
-  const safeTime=Math.max(350,Math.min(2500,28000/Math.max(1,n-2)));
   for(let i=0;i<n-2;i++){
-    nodes[i].className='rock white revealed';nodes[i].querySelector('span').textContent=draw[i].name;
+    nodes[i].className='rock white revealed';
+    nodes[i].style.setProperty('--reveal-index',String(i));nodes[i].querySelector('span').textContent=draw[i].name;
     caption.textContent=`${draw[i].name} is safe.`;announce(caption.textContent);cinematicSound('safe');await showWait(safeTime);
   }
   const finalists=draw.slice(-2).sort((a,b)=>a.id-b.id);
@@ -93,6 +107,8 @@ async function playSequence(draw){
   for(let i=0;i<4;i++){cinematicSound('heartbeat');await showWait(1250);}
   $('stage').querySelector('h2').textContent='The purple rock belongs to…';await showWait(3300);
   $('stage').replaceChildren();$('stage').classList.add('finale');
+  document.querySelector('.arena').classList.add('elimination-flash');
+  setTimeout(()=>document.querySelector('.arena').classList.remove('elimination-flash'),1800);
   const label=document.createElement('p');label.className='out-label';label.textContent='ELIMINATED';
   const finalRock=rock(eliminated.name,'purple final-rock');
   const title=document.createElement('h2');title.className='result-name';title.textContent=eliminated.name;
@@ -125,6 +141,6 @@ $('fullscreen').onclick=async()=>{try{if(!document.fullscreenElement)await docum
 $('clear-history').onclick=()=>{if(!confirm('Clear all locally saved draw history?'))return;drawHistory=[];try{localStorage.removeItem('rocks-v2-history');}catch{}renderHistory();};
 try{const saved=JSON.parse(localStorage.getItem('rocks-v2-history')||'[]');if(Array.isArray(saved))drawHistory=saved.filter(e=>e&&typeof e.eliminated==='string'&&Array.isArray(e.roster)&&typeof e.date==='string').slice(0,25);}catch{}renderHistory();
 $('throw').onclick=()=>throwRocks().catch(error=>{$('message').textContent=error.message;busy=false;renderRoster()});
-function resetDraw(){if(busy)throw new Error('Wait for the current reveal to finish.');finished=false;lastResult=[], replaying=false, drawHistory=[];$('stage').classList.remove('finale');$('stage').innerHTML=intro;document.querySelector('.arena').classList.remove('dramatic');$('reset').hidden=true;$('replay').hidden=true;renderRoster();$('names').focus();$('message').textContent='All names retained. Remove anyone not in the next draw.';return {players:players.length};}
+function resetDraw(){if(busy)throw new Error('Wait for the current reveal to finish.');finished=false;lastResult=[], replaying=false;$('stage').classList.remove('finale');$('stage').innerHTML=intro;document.querySelector('.arena').classList.remove('dramatic');$('reset').hidden=true;$('replay').hidden=true;renderRoster();$('names').focus();$('message').textContent='All names retained. Remove anyone not in the next draw.';return {players:players.length};}
 $('reset').onclick=resetDraw;renderRoster();
 if(document.modelContext?.registerTool){const tools=[{name:'read_rocks_draw',description:'Read the roster and completed results; never reveals an in-progress outcome.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true},execute:()=>({players:players.map(p=>({...p})),busy,finished,result:finished?lastResult:[]})},{name:'add_rocks_players',description:'Add player names separated by lines or commas to the editable roster.',inputSchema:{type:'object',properties:{names:{type:'string'}},required:['names'],additionalProperties:false},execute:input=>addPlayers(input.names)},{name:'remove_rocks_player',description:'Remove a player from the editable roster by their ID.',inputSchema:{type:'object',properties:{id:{type:'integer'}},required:['id'],additionalProperties:false},execute:input=>removePlayer(input.id)},{name:'throw_rocks',description:'Lock the current roster, randomly assign exactly one purple rock, and play the elimination reveal.',inputSchema:{type:'object',properties:{},additionalProperties:false},execute:throwRocks},{name:'reset_rocks_draw',description:'Return to roster editing after a completed draw, retaining all player names.',inputSchema:{type:'object',properties:{},additionalProperties:false},execute:resetDraw}];for(const tool of tools){try{Promise.resolve(document.modelContext.registerTool(tool)).catch(()=>{})}catch{}}}
