@@ -21,3 +21,17 @@
 @keyframes purpleFlash{0%{opacity:0}12%{opacity:.85}24%{opacity:.08}40%{opacity:.5}100%{opacity:0}}
 @keyframes finalPulse{50%{transform:scale(1.08);filter:drop-shadow(0 0 100px #c85aff)}}
 @media(prefers-reduced-motion:reduce){.rock.thrown,.rock.revealed,.stage .phase,.stage h2,.final-rock.purple,.arena.elimination-flash::before{animation:none!important}}
+
+/* ROCKS 2.2: physical rock mixing sequence before the cast */
+.rock-mixer{position:relative;width:min(100%,480px);height:235px;margin:12px auto 0;perspective:850px;isolation:isolate}
+.rock-mixer .mixing-rock{position:absolute;top:50%;left:50%;width:94px;height:84px;margin:-42px 0 0 -47px;transform-origin:center;animation:mixStones 1.65s cubic-bezier(.48,.08,.52,.92) infinite;animation-delay:var(--mix-delay);z-index:2}
+.rock-mixer .mixing-rock:nth-child(even){animation-direction:reverse;animation-duration:1.85s}
+.rock-mixer .mixing-rock:nth-child(3n){animation-duration:1.35s}
+.rock-mixer .mixing-rock img{filter:brightness(.7) sepia(.3) saturate(.5)}
+.mixer-ring{position:absolute;inset:16% 9%;border:2px solid #b17c484d;border-radius:50%;box-shadow:0 0 28px #a35b2950,inset 0 0 45px #bd6c2840;transform:rotateX(64deg);animation:mixRing 2s linear infinite;pointer-events:none}
+.arena.mixing .embers{animation-duration:2.5s;opacity:1}
+.arena.mixing{box-shadow:inset 0 0 140px #b865374d,0 20px 100px #0009}
+@keyframes mixStones{0%{transform:translate(-160px,-34px) rotate(-35deg) scale(.65);opacity:.6}25%{transform:translate(65px,-83px) rotate(140deg) scale(1.05);opacity:1}50%{transform:translate(155px,38px) rotate(290deg) scale(.72);opacity:.8}75%{transform:translate(-45px,74px) rotate(430deg) scale(1.12);opacity:1}100%{transform:translate(-160px,-34px) rotate(685deg) scale(.65);opacity:.6}}
+@keyframes mixRing{to{transform:rotateX(64deg) rotate(360deg)}}
+@media(max-width:700px){.rock-mixer{width:min(100%,320px);height:190px}.rock-mixer .mixing-rock{width:66px;height:60px;margin:-30px 0 0 -33px}@keyframes mixStones{0%{transform:translate(-100px,-20px) rotate(-35deg) scale(.65)}25%{transform:translate(42px,-52px) rotate(140deg) scale(1.05)}50%{transform:translate(100px,26px) rotate(290deg) scale(.72)}75%{transform:translate(-30px,50px) rotate(430deg) scale(1.12)}100%{transform:translate(-100px,-20px) rotate(685deg) scale(.65)}}}
+@media(prefers-reduced-motion:reduce){.rock-mixer .mixing-rock,.mixer-ring{animation:none!important}.rock-mixer .mixing-rock{transform:translate(calc((var(--i) - 4)*18px),0)}}

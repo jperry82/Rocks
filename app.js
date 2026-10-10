@@ -45,19 +45,33 @@ $('sound').onclick=()=>{sound=!sound;if(sound)initAudio();$('sound').textContent
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,reduced?Math.min(ms,350):ms));
 function rock(name,kind='concealed'){const node=document.createElement('div');node.className=`rock ${kind}`;const img=document.createElement('img');img.src='assets/rock.png';img.alt='';const label=document.createElement('span');label.textContent=name;node.append(img,label);return node;}
 function stageTitle(phase,title){$('stage').replaceChildren();const p=document.createElement('p');p.className='phase';p.textContent=phase;const h=document.createElement('h2');h.textContent=title;$('stage').append(p,h);return h;}
-// Build a per-draw timing budget so the selector controls the entire show.
-const durationTargets={quick:30000,standard:60000,epic:90000};
+// A fixed 30-second show budget. Each awaited segment is included in the budget.
+const SHOW_DURATION=30000;
 let timelineScale=1;
 const showWait=ms=>wait(ms*timelineScale);
 function configureTimeline(count){
-  // Opening 4500 + players 4200 + casting 4200 + final two 5000 + reveal 3300 + outro 3000.
-  // Safe reveals: count-2; no unbudgeted delays.
-  const safeBase=Math.max(350,Math.min(2500,28000/Math.max(1,count-2)));
-  const baseline=24200+Math.max(0,count-2)*safeBase;
-  timelineScale=durationTargets[$('pace').value]/baseline;
+  const safeBase=Math.max(180,Math.min(1250,9000/Math.max(1,count-2)));
+  // Opening 2800, contestants 2200, mix 5000, cast 2300,
+  // final-two 3500, pre-reveal 1600, outro 1800, plus safe reveals.
+  const baseline=19200+Math.max(0,count-2)*safeBase;
+  timelineScale=SHOW_DURATION/baseline;
   return safeBase;
 }
-$('pace').addEventListener('change',()=>{if(!busy)$('message').textContent=`${$('pace').selectedOptions[0].textContent} selected for the next draw.`;});
+function mixingScene(count){
+  scene('THE ROCKS ARE MIXING','Fate is being sealed.','The stones tumble. No one knows their fate.');
+  const mixer=document.createElement('div');mixer.className='rock-mixer';mixer.setAttribute('aria-hidden','true');
+  const visible=Math.min(count,18);
+  for(let i=0;i<visible;i++){
+    const stone=rock('','concealed mixing-rock');
+    stone.style.setProperty('--i',i);
+    stone.style.setProperty('--total',visible);
+    stone.style.setProperty('--mix-delay',`${(-i*.17).toFixed(2)}s`);
+    mixer.append(stone);
+  }
+  const ring=document.createElement('div');ring.className='mixer-ring';mixer.append(ring);
+  $('stage').append(mixer);
+  document.querySelector('.arena').classList.add('mixing');
+}
 function cinematicSound(kind){
   if(!sound)return;
   if(kind==='rumble'){tone(58,1.8,.12,'sawtooth');tone(38,2,.08,'triangle');}
@@ -83,14 +97,16 @@ async function playSequence(draw){
   $('stage').classList.remove('finale');document.querySelector('.arena').classList.remove('dramatic');
   $('round-label').textContent='THE ROCKS HAVE BEEN CAST';
   scene('LEAVE IT TO FATE','The council has spoken.','One purple rock. No second chances.');
-  cinematicSound('rumble');announce('The rock draw is beginning.');await showWait(4500);
+  cinematicSound('rumble');announce('The rock draw is beginning.');await showWait(2800);
   scene('THE PLAYERS',`${n} souls. One fate.`,draw.map(p=>p.name).join('  ·  '));
-  await showWait(4200);
+  await showWait(2200);
+  mixingScene(n); cinematicSound('rumble'); await showWait(5000);
+  document.querySelector('.arena').classList.remove('mixing');
   scene('THE ROCKS ARE CAST','Fate is in motion.');
   document.querySelector('.arena').classList.add('casting');
   const grid=document.createElement('div');grid.className='draw-grid';$('stage').append(grid);
   const nodes=draw.map((_,i)=>{const el=rock('?');el.classList.add('thrown');el.style.setProperty('--delay',`${Math.min(i*.045,.7)}s`);grid.append(el);return el;});
-  cinematicSound('rumble');await showWait(4200);
+  cinematicSound('rumble');await showWait(2300);
   document.querySelector('.arena').classList.remove('casting');
   $('stage').querySelector('h2').textContent='White means another day.';
   const caption=document.createElement('p');caption.className='safe-tag';$('stage').append(caption);
@@ -104,8 +120,8 @@ async function playSequence(draw){
   const suspense=rock('?','concealed final-rock');$('stage').append(suspense);
   document.querySelector('.arena').classList.add('dramatic');
   announce(`Two players remain: ${finalists.map(p=>p.name).join(' and ')}.`);
-  for(let i=0;i<4;i++){cinematicSound('heartbeat');await showWait(1250);}
-  $('stage').querySelector('h2').textContent='The purple rock belongs to…';await showWait(3300);
+  for(let i=0;i<4;i++){cinematicSound('heartbeat');await showWait(875);}
+  $('stage').querySelector('h2').textContent='The purple rock belongs to…';await showWait(1600);
   $('stage').replaceChildren();$('stage').classList.add('finale');
   document.querySelector('.arena').classList.add('elimination-flash');
   setTimeout(()=>document.querySelector('.arena').classList.remove('elimination-flash'),1800);
@@ -120,7 +136,7 @@ async function playSequence(draw){
   details.append(summary,list);$('stage').append(details);
   $('round-label').textContent='THE DRAW IS COMPLETE';
   announce(`${eliminated.name} drew the purple rock and is eliminated.`);
-  await showWait(3000);
+  await showWait(1800);
   return {eliminated:eliminated.name,safe:survivors.map(p=>p.name)};
 }
 async function throwRocks(){
