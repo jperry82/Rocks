@@ -38,10 +38,30 @@ function addPlayers(raw){
 }
 function removePlayer(id){if(busy||finished)throw new Error('The roster is locked during a draw.');const index=players.findIndex(p=>p.id===id);if(index<0)throw new Error('Player not found.');players.splice(index,1);renderRoster();$('message').textContent='Player removed.';return {total:players.length};}
 $('names-form').onsubmit=e=>{e.preventDefault();try{addPlayers($('names').value);$('names').value='';$('names').focus()}catch(error){$('message').textContent=error.message}};
-function tone(freq,duration=.2,volume=.08,type='sine'){
-  if(!sound||!audioContext)return;try{const t=audioContext.currentTime,osc=audioContext.createOscillator(),gain=audioContext.createGain();osc.type=type;osc.frequency.setValueAtTime(freq,t);osc.frequency.exponentialRampToValueAtTime(Math.max(25,freq*.5),t+duration);gain.gain.setValueAtTime(.001,t);gain.gain.exponentialRampToValueAtTime(volume,t+.02);gain.gain.exponentialRampToValueAtTime(.001,t+duration);osc.connect(gain);gain.connect(audioContext.destination);osc.start(t);osc.stop(t+duration+.05)}catch{}}
-function initAudio(){try{audioContext??=new(window.AudioContext||window.webkitAudioContext)();audioContext.resume().catch(()=>{});}catch{}}
-$('sound').onclick=()=>{sound=!sound;if(sound)initAudio();$('sound').textContent=sound?'Sound on':'Sound off';$('sound').setAttribute('aria-pressed',String(sound));};
+// Pre-rendered cinematic soundtrack: no browser oscillator beeps.
+// All files are local, so GitHub Pages works without third-party audio services.
+const audioFiles={score:'assets/audio/tribal-score.ogg',safe:'assets/audio/stone-reveal.ogg',riser:'assets/audio/suspense-riser.ogg',impact:'assets/audio/deep-impact.ogg'};
+const audioPool={};let activeSounds=[];
+for(const [key,url] of Object.entries(audioFiles)){
+  const el=new Audio(url);el.preload='auto';el.volume=key==='score'?.72:key==='safe'?.48:.9;audioPool[key]=el;
+}
+function stopAudio(){
+  for(const a of activeSounds){try{a.pause();a.currentTime=0;}catch{}}
+  activeSounds=[];
+}
+function cue(kind){
+  if(!sound)return;
+  const template=audioPool[kind];if(!template)return;
+  const el=template.cloneNode();el.volume=template.volume;activeSounds.push(el);
+  el.addEventListener('ended',()=>{activeSounds=activeSounds.filter(x=>x!==el);},{once:true});
+  el.play().catch(()=>{});
+}
+$('sound').onclick=()=>{
+  sound=!sound;
+  if(!sound)stopAudio();
+  $('sound').textContent=sound?'Sound on':'Sound off';
+  $('sound').setAttribute('aria-pressed',String(sound));
+};
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,reduced?Math.min(ms,350):ms));
 function rock(name,kind='concealed'){const node=document.createElement('div');node.className=`rock ${kind}`;const img=document.createElement('img');img.src='assets/rock.png';img.alt='';const label=document.createElement('span');label.textContent=name;node.append(img,label);return node;}
 function stageTitle(phase,title){$('stage').replaceChildren();const p=document.createElement('p');p.className='phase';p.textContent=phase;const h=document.createElement('h2');h.textContent=title;$('stage').append(p,h);return h;}
@@ -73,11 +93,10 @@ function mixingScene(count){
   document.querySelector('.arena').classList.add('mixing');
 }
 function cinematicSound(kind){
-  if(!sound)return;
-  if(kind==='rumble'){tone(58,1.8,.12,'sawtooth');tone(38,2,.08,'triangle');}
-  if(kind==='safe'){tone(480,.22,.04);tone(720,.15,.025);}
-  if(kind==='heartbeat'){tone(65,.32,.14,'triangle');}
-  if(kind==='impact'){tone(45,2.5,.18,'sawtooth');tone(95,1.7,.1,'triangle');tone(310,.9,.045);}
+  if(kind==='safe')cue('safe');
+  else if(kind==='impact')cue('impact');
+  else if(kind==='heartbeat'){} // The percussion is scored into the music bed.
+  else if(kind==='rumble'){} // Avoid overlapping rumble effects.
 }
 function scene(phase,title,subtitle){stageTitle(phase,title);if(subtitle){const line=document.createElement('p');line.className='safe-tag';line.textContent=subtitle;$('stage').append(line);} }
 function recordHistory(draw){
@@ -97,7 +116,7 @@ async function playSequence(draw){
   $('stage').classList.remove('finale');document.querySelector('.arena').classList.remove('dramatic');
   $('round-label').textContent='THE ROCKS HAVE BEEN CAST';
   scene('LEAVE IT TO FATE','The council has spoken.','One purple rock. No second chances.');
-  cinematicSound('rumble');announce('The rock draw is beginning.');await showWait(2800);
+  cue('score');announce('The rock draw is beginning.');await showWait(2800);
   scene('THE PLAYERS',`${n} souls. One fate.`,draw.map(p=>p.name).join('  ·  '));
   await showWait(2200);
   mixingScene(n); cinematicSound('rumble'); await showWait(5000);
@@ -120,7 +139,7 @@ async function playSequence(draw){
   const suspense=rock('?','concealed final-rock');$('stage').append(suspense);
   document.querySelector('.arena').classList.add('dramatic');
   announce(`Two players remain: ${finalists.map(p=>p.name).join(' and ')}.`);
-  for(let i=0;i<4;i++){cinematicSound('heartbeat');await showWait(875);}
+  cue('riser');for(let i=0;i<4;i++){await showWait(875);}
   $('stage').querySelector('h2').textContent='The purple rock belongs to…';await showWait(1600);
   $('stage').replaceChildren();$('stage').classList.add('finale');
   document.querySelector('.arena').classList.add('elimination-flash');
@@ -142,14 +161,14 @@ async function playSequence(draw){
 async function throwRocks(){
   if(busy||finished)throw new Error('Return to players before another draw.');
   const draw=allocate(players);lastResult=draw;busy=true;renderRoster();$('message').textContent='';
-  if(sound)initAudio();
+  stopAudio();
   try{const result=await playSequence(draw);finished=true;recordHistory(draw);return result;}
   finally{busy=false;$('replay').hidden=!finished;$('reset').hidden=!finished;renderRoster();}
 }
 async function replayDraw(){
   if(busy||!finished||!lastResult.length)return;
   busy=true;$('replay').disabled=true;$('reset').disabled=true;renderRoster();
-  try{if(sound)initAudio();await playSequence(lastResult);}
+  try{stopAudio();await playSequence(lastResult);}
   finally{busy=false;$('replay').disabled=false;$('reset').disabled=false;renderRoster();}
 }
 $('replay').onclick=()=>replayDraw().catch(error=>$('message').textContent=error.message);
@@ -157,6 +176,6 @@ $('fullscreen').onclick=async()=>{try{if(!document.fullscreenElement)await docum
 $('clear-history').onclick=()=>{if(!confirm('Clear all locally saved draw history?'))return;drawHistory=[];try{localStorage.removeItem('rocks-v2-history');}catch{}renderHistory();};
 try{const saved=JSON.parse(localStorage.getItem('rocks-v2-history')||'[]');if(Array.isArray(saved))drawHistory=saved.filter(e=>e&&typeof e.eliminated==='string'&&Array.isArray(e.roster)&&typeof e.date==='string').slice(0,25);}catch{}renderHistory();
 $('throw').onclick=()=>throwRocks().catch(error=>{$('message').textContent=error.message;busy=false;renderRoster()});
-function resetDraw(){if(busy)throw new Error('Wait for the current reveal to finish.');finished=false;lastResult=[], replaying=false;$('stage').classList.remove('finale');$('stage').innerHTML=intro;document.querySelector('.arena').classList.remove('dramatic');$('reset').hidden=true;$('replay').hidden=true;renderRoster();$('names').focus();$('message').textContent='All names retained. Remove anyone not in the next draw.';return {players:players.length};}
+function resetDraw(){stopAudio();if(busy)throw new Error('Wait for the current reveal to finish.');finished=false;lastResult=[], replaying=false;$('stage').classList.remove('finale');$('stage').innerHTML=intro;document.querySelector('.arena').classList.remove('dramatic');$('reset').hidden=true;$('replay').hidden=true;renderRoster();$('names').focus();$('message').textContent='All names retained. Remove anyone not in the next draw.';return {players:players.length};}
 $('reset').onclick=resetDraw;renderRoster();
 if(document.modelContext?.registerTool){const tools=[{name:'read_rocks_draw',description:'Read the roster and completed results; never reveals an in-progress outcome.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true},execute:()=>({players:players.map(p=>({...p})),busy,finished,result:finished?lastResult:[]})},{name:'add_rocks_players',description:'Add player names separated by lines or commas to the editable roster.',inputSchema:{type:'object',properties:{names:{type:'string'}},required:['names'],additionalProperties:false},execute:input=>addPlayers(input.names)},{name:'remove_rocks_player',description:'Remove a player from the editable roster by their ID.',inputSchema:{type:'object',properties:{id:{type:'integer'}},required:['id'],additionalProperties:false},execute:input=>removePlayer(input.id)},{name:'throw_rocks',description:'Lock the current roster, randomly assign exactly one purple rock, and play the elimination reveal.',inputSchema:{type:'object',properties:{},additionalProperties:false},execute:throwRocks},{name:'reset_rocks_draw',description:'Return to roster editing after a completed draw, retaining all player names.',inputSchema:{type:'object',properties:{},additionalProperties:false},execute:resetDraw}];for(const tool of tools){try{Promise.resolve(document.modelContext.registerTool(tool)).catch(()=>{})}catch{}}}
