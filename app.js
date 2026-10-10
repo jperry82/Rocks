@@ -13,7 +13,7 @@ function allocate(players) {
   return shuffled.map((p,i)=>({...p,purple:i===shuffled.length-1}));
 }
 const $ = id => document.getElementById(id);
-let players=[], nextId=1, busy=false, finished=false, sound=false, audioContext=null, lastResult=[], replaying=false, drawHistory=[];
+let players=[], nextId=1, busy=false, finished=false, sound=true, audioContext=null, lastResult=[], replaying=false, drawHistory=[];
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const intro=$('stage').innerHTML;
 function announce(text){$('announcement').textContent=text;}
@@ -38,31 +38,27 @@ function addPlayers(raw){
 }
 function removePlayer(id){if(busy||finished)throw new Error('The roster is locked during a draw.');const index=players.findIndex(p=>p.id===id);if(index<0)throw new Error('Player not found.');players.splice(index,1);renderRoster();$('message').textContent='Player removed.';return {total:players.length};}
 $('names-form').onsubmit=e=>{e.preventDefault();try{addPlayers($('names').value);$('names').value='';$('names').focus()}catch(error){$('message').textContent=error.message}};
-// Pre-rendered cinematic soundtrack: no browser oscillator beeps.
-// All files are local, so GitHub Pages works without third-party audio services.
-const audioFiles={score:'assets/audio/tribal-score.ogg',safe:'assets/audio/stone-reveal.ogg',riser:'assets/audio/suspense-riser.ogg',impact:'assets/audio/deep-impact.ogg'};
-const audioPool={};let activeSounds=[];
-for(const [key,url] of Object.entries(audioFiles)){
-  const el=new Audio(url);el.preload='auto';el.volume=key==='score'?.72:key==='safe'?.48:.9;audioPool[key]=el;
-}
-function stopAudio(){
-  for(const a of activeSounds){try{a.pause();a.currentTime=0;}catch{}}
-  activeSounds=[];
-}
+// ROCKS 2.4: Single Suno-produced master score. Place a licensed 30s MP3 at this path.
+// The browser initiates playback only after the host clicks Start or Replay.
+const soundtrack = new Audio('assets/audio/rocks-cinematic-30s.mp3');
+soundtrack.preload = 'auto';
+soundtrack.volume = 0.9;
+// The soundtrack is included in this release and enabled by default.
+function stopAudio(){soundtrack.pause();soundtrack.currentTime=0;}
 function cue(kind){
-  if(!sound)return;
-  const template=audioPool[kind];if(!template)return;
-  const el=template.cloneNode();el.volume=template.volume;activeSounds.push(el);
-  el.addEventListener('ended',()=>{activeSounds=activeSounds.filter(x=>x!==el);},{once:true});
-  el.play().catch(()=>{});
+  if(kind !== 'score' || !sound) return;
+  stopAudio();
+  soundtrack.play().catch(()=>{
+    $('message').textContent='Audio could not play. Check browser permissions and reload the page.';
+  });
 }
 $('sound').onclick=()=>{
   sound=!sound;
-  if(!sound)stopAudio();
+  if(!sound) stopAudio();
   $('sound').textContent=sound?'Sound on':'Sound off';
   $('sound').setAttribute('aria-pressed',String(sound));
 };
-const wait=ms=>new Promise(resolve=>setTimeout(resolve,reduced?Math.min(ms,350):ms));
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms)); // Reduced motion changes CSS, not the 30-second show clock.
 function rock(name,kind='concealed'){const node=document.createElement('div');node.className=`rock ${kind}`;const img=document.createElement('img');img.src='assets/rock.png';img.alt='';const label=document.createElement('span');label.textContent=name;node.append(img,label);return node;}
 function stageTitle(phase,title){$('stage').replaceChildren();const p=document.createElement('p');p.className='phase';p.textContent=phase;const h=document.createElement('h2');h.textContent=title;$('stage').append(p,h);return h;}
 // A fixed 30-second show budget. Each awaited segment is included in the budget.
@@ -72,8 +68,8 @@ const showWait=ms=>wait(ms*timelineScale);
 function configureTimeline(count){
   const safeBase=Math.max(180,Math.min(1250,9000/Math.max(1,count-2)));
   // Opening 2800, contestants 2200, mix 5000, cast 2300,
-  // final-two 3500, pre-reveal 1600, outro 1800, plus safe reveals.
-  const baseline=19200+Math.max(0,count-2)*safeBase;
+  // final-two 3500, pre-reveal 1600, outro 4800, plus safe reveals.
+  const baseline=22200+Math.max(0,count-2)*safeBase;
   timelineScale=SHOW_DURATION/baseline;
   return safeBase;
 }
@@ -92,12 +88,7 @@ function mixingScene(count){
   $('stage').append(mixer);
   document.querySelector('.arena').classList.add('mixing');
 }
-function cinematicSound(kind){
-  if(kind==='safe')cue('safe');
-  else if(kind==='impact')cue('impact');
-  else if(kind==='heartbeat'){} // The percussion is scored into the music bed.
-  else if(kind==='rumble'){} // Avoid overlapping rumble effects.
-}
+function cinematicSound(kind){} // All sound events are baked into the synchronized master score.
 function scene(phase,title,subtitle){stageTitle(phase,title);if(subtitle){const line=document.createElement('p');line.className='safe-tag';line.textContent=subtitle;$('stage').append(line);} }
 function recordHistory(draw){
   const entry={date:new Date().toISOString(),roster:draw.map(p=>p.name),eliminated:draw.find(p=>p.purple).name};
@@ -139,7 +130,7 @@ async function playSequence(draw){
   const suspense=rock('?','concealed final-rock');$('stage').append(suspense);
   document.querySelector('.arena').classList.add('dramatic');
   announce(`Two players remain: ${finalists.map(p=>p.name).join(' and ')}.`);
-  cue('riser');for(let i=0;i<4;i++){await showWait(875);}
+  for(let i=0;i<4;i++){await showWait(875);}
   $('stage').querySelector('h2').textContent='The purple rock belongs to…';await showWait(1600);
   $('stage').replaceChildren();$('stage').classList.add('finale');
   document.querySelector('.arena').classList.add('elimination-flash');
@@ -155,7 +146,8 @@ async function playSequence(draw){
   details.append(summary,list);$('stage').append(details);
   $('round-label').textContent='THE DRAW IS COMPLETE';
   announce(`${eliminated.name} drew the purple rock and is eliminated.`);
-  await showWait(1800);
+  await showWait(4800);
+  stopAudio();
   return {eliminated:eliminated.name,safe:survivors.map(p=>p.name)};
 }
 async function throwRocks(){
